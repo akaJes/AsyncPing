@@ -1,25 +1,35 @@
 #include "AsyncPing.h"
-#include <lwip/raw.h>
+extern "C"{
+//#include <lwip/raw.h>
 #include <lwip/icmp.h>
 #include <lwip/sys.h>
 #include <lwip/inet_chksum.h>
+//#include <lwip/netif.h>
 
 #include <ping.h>
 #include <user_interface.h>
+}
 #define PING_DATA_SIZE 32
-bool ICACHE_FLASH_ATTR AsyncPing::init(struct ping_option *ping_opt)
+#include <Esp.h>
+#include "hexdump.h"
+ICACHE_FLASH_ATTR AsyncPing::AsyncPing(){ ping_id=system_get_time(); ping_pcb=NULL;}
+ICACHE_FLASH_ATTR AsyncPing::~AsyncPing(){ done();}
+
+bool ICACHE_FLASH_ATTR AsyncPing::init(const IPAddress &addr)
 {
   ip_addr_t ping_target;
+  if (!ping_pcb)
   ping_pcb = raw_new(IP_PROTO_ICMP);
   LWIP_ASSERT("ping_pcb != NULL", ping_pcb != NULL);
   ping_seq_num=0;
-
   raw_recv(ping_pcb, _s_ping_recv, this);
   raw_bind(ping_pcb, IP_ADDR_ANY);
-
-  ping_target.addr = ping_opt->ip;
+  //ping_pcb->remote_ip.addr = addr;
+  ping_target.addr = addr;
+//  Serial.println(ping_target.addr);
   ping_sent = system_get_time();
   ping_send(ping_pcb, &ping_target);
+//hexDump("raw",ping_pcb,sizeof(struct raw_pcb));
 
   //sys_timeout(PING_TIMEOUT_MS, ping_timeout, this);
   //sys_timeout(pingmsg->coarse_time, ping_coarse_tmr, pingmsg);
@@ -48,11 +58,15 @@ AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr)
     iecho = (struct icmp_echo_hdr *)p->payload;
 
     ping_prepare_echo(iecho, (u16_t)ping_size);
-
-    raw_sendto(raw, p, addr);
+//    hexDump("packet",iecho,ping_size);
+    err_t err= raw_sendto(raw, p, addr);
+    Serial.print("sent :");
+    Serial.println(IPAddress(addr->addr));
+//    Serial.println(err);
     ping_time = sys_now();
   }
   pbuf_free(p);
+//  netif_poll(null);
 }
 void ICACHE_FLASH_ATTR
 AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len)
@@ -81,15 +95,16 @@ AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len)
 AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr){
   struct icmp_echo_hdr *iecho = NULL;
   static u16_t seqno = 0;
-
   LWIP_UNUSED_ARG(pcb);
   LWIP_UNUSED_ARG(addr);
+  Serial.print("recv :");
+  Serial.print(IPAddress(addr->addr));
   LWIP_ASSERT("p != NULL", p != NULL);
-
   if (pbuf_header( p, -PBUF_IP_HLEN)==0) {
     iecho = (struct icmp_echo_hdr *)p->payload;
 
     if ((iecho->id == ping_id) && (iecho->seqno == htons(ping_seq_num)) && iecho->type == ICMP_ER) {
+      Serial.println(" - mine");
       LWIP_DEBUGF( PING_DEBUG, ("ping: recv "));
       ip_addr_debug_print(PING_DEBUG, addr);
       LWIP_DEBUGF( PING_DEBUG, (" %"U32_F" ms\n", (sys_now()-ping_time)));
@@ -99,6 +114,8 @@ AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr){
       return 1; /* eat the packet */
     }
   }
+  pbuf_header( p, PBUF_IP_HLEN);
+  Serial.println();
 
   return 0; /* don't eat the packet */
 }
