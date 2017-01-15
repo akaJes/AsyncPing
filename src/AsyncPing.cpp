@@ -1,54 +1,87 @@
-#include "AsyncPing.h"
-extern "C"{
-//#include <lwip/raw.h>
-#include <lwip/icmp.h>
-#include <lwip/sys.h>
-#include <lwip/inet_chksum.h>
-//#include <lwip/netif.h>
-
-#include <ping.h>
-#include <user_interface.h>
-}
-#define PING_DATA_SIZE 32
 #include <Esp.h>
-#include "hexdump.h"
-ICACHE_FLASH_ATTR AsyncPing::AsyncPing(){ ping_id=system_get_time(); ping_pcb=NULL;}
-ICACHE_FLASH_ATTR AsyncPing::~AsyncPing(){ done();}
+#include "AsyncPing.h"
 
-bool ICACHE_FLASH_ATTR AsyncPing::init(const IPAddress &addr)
-{
-  ip_addr_t ping_target;
-  if (!ping_pcb)
-  ping_pcb = raw_new(IP_PROTO_ICMP);
-  LWIP_ASSERT("ping_pcb != NULL", ping_pcb != NULL);
-  ping_seq_num=0;
-  raw_recv(ping_pcb, _s_ping_recv, this);
-  raw_bind(ping_pcb, IP_ADDR_ANY);
-  //ping_pcb->remote_ip.addr = addr;
+extern "C"{
+  #include <lwip/icmp.h>
+  #include <lwip/sys.h>
+  #include <lwip/inet_chksum.h>
+}
+
+#define PING_DATA_SIZE 64 - 8
+
+AsyncPing::AsyncPing() {
+  ping_id = random(1 << 31);
+  ping_pcb = NULL;
+  _on_recv = NULL;
+  _on_sent = NULL;
+}
+
+AsyncPing::~AsyncPing() {
+  done();
+}
+
+void AsyncPing::on(bool mode, THandlerFunction fn) {
+  if(mode)
+    _on_recv=fn;
+  else
+    _on_sent=fn;
+}
+
+bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
+  if(!count)
+    return false;
+  ping_seq_num = 0;
+  ping_total_sent = 0;
+  ping_total_recv = 0;
+  ping_total_time = 0;
+  ping_timeout = timeout;
+  count_down = count;
+  if (!ping_pcb){
+    ping_pcb = raw_new(IP_PROTO_ICMP);
+    raw_recv(ping_pcb, _s_ping_recv, reinterpret_cast<void*>(this));
+    raw_bind(ping_pcb, IP_ADDR_ANY);
+  }
   ping_target.addr = addr;
-//  Serial.println(ping_target.addr);
-  ping_sent = system_get_time();
-  ping_send(ping_pcb, &ping_target);
-//hexDump("raw",ping_pcb,sizeof(struct raw_pcb));
-
-  //sys_timeout(PING_TIMEOUT_MS, ping_timeout, this);
-  //sys_timeout(pingmsg->coarse_time, ping_coarse_tmr, pingmsg);
+  ping_sent = sys_now(); // micro? system_get_time();
+  send_packet();
   return true;
 }
-void AsyncPing::done(){
-  raw_remove(ping_pcb);
+
+void AsyncPing::send_packet(){
+  ping_ack=false;
+  ping_send(ping_pcb, &ping_target);
+  ping_total_sent++;
+  count_down--;
+  timer_start();
+}
+
+void AsyncPing::cancel(){
+  count_down=0;
+}
+
+void AsyncPing::timer(){
+  if(!ping_ack)
+    if(_on_recv)
+      _on_recv(*this);
+  if(count_down){
+    send_packet();
+  }else{
+    ping_total_time=sys_now()-ping_sent; //micro? system_get_time()
+    if(_on_sent)
+      _on_sent(*this);
   }
-void ICACHE_FLASH_ATTR
-AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr)
-{
+}
+
+void AsyncPing::done() {
+  timer_stop();
+  if (ping_pcb)
+    raw_remove(ping_pcb);
+}
+
+void AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr) {
   struct pbuf *p = NULL;
   struct icmp_echo_hdr *iecho = NULL;
-  size_t ping_size = sizeof(struct icmp_echo_hdr) + PING_DATA_SIZE;
-
-  LWIP_DEBUGF( PING_DEBUG, ("ping: send "));
-  ip_addr_debug_print(PING_DEBUG, addr);
-  LWIP_DEBUGF( PING_DEBUG, ("\n"));
-  LWIP_ASSERT("ping_size <= 0xffff", ping_size <= 0xffff);
+  ping_size = sizeof(struct icmp_echo_hdr) + PING_DATA_SIZE;
 
   p = pbuf_alloc(PBUF_IP, (u16_t)ping_size, PBUF_RAM);
   if (!p) {
@@ -58,19 +91,13 @@ AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr)
     iecho = (struct icmp_echo_hdr *)p->payload;
 
     ping_prepare_echo(iecho, (u16_t)ping_size);
-//    hexDump("packet",iecho,ping_size);
     err_t err= raw_sendto(raw, p, addr);
-    Serial.print("sent :");
-    Serial.println(IPAddress(addr->addr));
-//    Serial.println(err);
-    ping_time = sys_now();
+    ping_start = sys_now();
   }
   pbuf_free(p);
-//  netif_poll(null);
 }
-void ICACHE_FLASH_ATTR
-AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len)
-{
+
+void AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len) {
   size_t i = 0;
   size_t data_len = len - sizeof(struct icmp_echo_hdr);
 
@@ -91,38 +118,47 @@ AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len)
 
   iecho->chksum = inet_chksum(iecho, len);
 }
-  u8_t  ICACHE_FLASH_ATTR
-AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr){
+
+u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   struct icmp_echo_hdr *iecho = NULL;
-  static u16_t seqno = 0;
-  LWIP_UNUSED_ARG(pcb);
-  LWIP_UNUSED_ARG(addr);
-  Serial.print("recv :");
-  Serial.print(IPAddress(addr->addr));
-  LWIP_ASSERT("p != NULL", p != NULL);
-  if (pbuf_header( p, -PBUF_IP_HLEN)==0) {
+  struct ip_hdr *ip = (struct ip_hdr *)p->payload;
+
+  if (pbuf_header( p, -PBUF_IP_HLEN) == 0) {
     iecho = (struct icmp_echo_hdr *)p->payload;
-
     if ((iecho->id == ping_id) && (iecho->seqno == htons(ping_seq_num)) && iecho->type == ICMP_ER) {
-      Serial.println(" - mine");
-      LWIP_DEBUGF( PING_DEBUG, ("ping: recv "));
-      ip_addr_debug_print(PING_DEBUG, addr);
-      LWIP_DEBUGF( PING_DEBUG, (" %"U32_F" ms\n", (sys_now()-ping_time)));
-
-      //PING_RESULT(1);
+      ping_time = sys_now() - ping_start;
+      ping_ttl = ip->_ttl;
+      //ping_size = htons(ip->_len);
+      ping_ack = true;
+      ping_total_recv++;
+      if (_on_recv)
+        _on_recv(*this);
       pbuf_free(p);
       return 1; /* eat the packet */
     }
   }
   pbuf_header( p, PBUF_IP_HLEN);
-  Serial.println();
-
   return 0; /* don't eat the packet */
 }
 
-unsigned char  ICACHE_FLASH_ATTR
-AsyncPing::_s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, ip_addr*addr){
+void AsyncPing::timer_start(){
+  timer_stop();
+  os_timer_setfn(&_timer, reinterpret_cast<ETSTimerFunc*>(_s_timer), reinterpret_cast<void*>(this));
+  os_timer_arm(&_timer, ping_timeout, 0); // (repeat)?REPEAT:ONCE); //ONCE=0 REPEAT=1
+  timer_started = true;
+}
+
+void AsyncPing::timer_stop(){
+  if (timer_started){
+    timer_started = false;
+    os_timer_disarm(&_timer);
+  }
+}
+
+u8_t AsyncPing::_s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, ip_addr*addr){
   return reinterpret_cast<AsyncPing*>(arg)->ping_recv(tpcb, pb, addr);
 }
 
-
+void AsyncPing::_s_timer (void*arg){
+  return reinterpret_cast<AsyncPing*>(arg)->timer();
+}
