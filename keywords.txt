@@ -1,1 +1,38 @@
+#######################################
+# Syntax Coloring Map For AsyncPing
+#######################################
 
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+AsyncPing               	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+on                      	KEYWORD2
+init                    	KEYWORD2
+
+cancel                  	KEYWORD2
+answer                  	KEYWORD2
+
+addr                    	KEYWORD2
+time                    	KEYWORD2
+seq                     	KEYWORD2
+ttl                     	KEYWORD2
+size                    	KEYWORD2
+
+total_sent              	KEYWORD2
+total_recv              	KEYWORD2
+total_time              	KEYWORD2
+
+######################################
+# Instances (KEYWORD2)
+#######################################
+
+
+#######################################
+# Constants (LITERAL1)
+#######################################
