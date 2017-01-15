@@ -35,6 +35,7 @@ bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
   ping_total_recv = 0;
   ping_total_time = 0;
   ping_timeout = timeout;
+  addr_mac = NULL;
   count_down = count;
   if (!ping_pcb){
     ping_pcb = raw_new(IP_PROTO_ICMP);
@@ -131,6 +132,9 @@ u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
       //ping_size = htons(ip->_len);
       ping_ack = true;
       ping_total_recv++;
+      ip_addr_t *unused_ipaddr;
+      if (addr_mac == NULL)
+        etharp_find_addr(NULL, addr, &addr_mac, &unused_ipaddr);
       if (_on_recv)
         _on_recv(*this);
       pbuf_free(p);

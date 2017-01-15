@@ -3,6 +3,8 @@
 
 extern "C" {
   #include <lwip/raw.h>
+  #include <netif/etharp.h>
+  #include <user_interface.h>
 }
 
 class AsyncPing{
@@ -20,6 +22,7 @@ public:
   u32_t seq(){ return ping_seq_num; }
   u32_t ttl(){ return ping_ttl; }
   u16_t size(){ return ping_size; }
+  struct eth_addr *mac(){ return addr_mac; }
 
   u16_t total_sent(){ return ping_total_sent; }
   u16_t total_recv(){ return ping_total_recv; }
@@ -30,6 +33,7 @@ private:
   void  timer_start();
   void  timer_stop();
   void  timer();
+  struct eth_addr *addr_mac;
 
   u32_t ping_timeout;
   ip_addr_t ping_target;

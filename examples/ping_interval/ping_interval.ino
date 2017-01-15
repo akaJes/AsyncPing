@@ -47,8 +47,10 @@ void setup() {
           Serial.printf("no answer yet for %s icmp_seq=%d\n",host.addr().toString().c_str(),host.seq());
       });
       Pings[i].on(false,[](AsyncPing& host){
-          Serial.printf("total answer from %s sent %d recevied %d time %d ms\n",host.addr().toString().c_str(),host.total_sent(),host.total_recv(),host.total_time());
-      });
+        Serial.printf("total answer from %s sent %d recevied %d time %d ms\n",host.addr().toString().c_str(),host.total_sent(),host.total_recv(),host.total_time());
+        if (host.mac())
+          Serial.printf("detected eth address " MACSTR "\n",MAC2STR(host.mac()->addr));
+       });
     }
     ping();
     timer.attach(10,ping);

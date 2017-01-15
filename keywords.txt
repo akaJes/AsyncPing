@@ -27,6 +27,7 @@ size                    	KEYWORD2
 total_sent              	KEYWORD2
 total_recv              	KEYWORD2
 total_time              	KEYWORD2
+mac                     	KEYWORD2
 
 ######################################
 # Instances (KEYWORD2)
