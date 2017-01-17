@@ -13,6 +13,7 @@ public:
   AsyncPing();
   void on(bool mode, THandlerFunction handler);
   bool init(const IPAddress &addr, u8_t count = 3, u32_t timeout = 1000);
+  bool init(const char *host, u8_t count = 3, u32_t timeout = 1000);
   void cancel();
   ~AsyncPing();
 
@@ -64,5 +65,3 @@ private:
   THandlerFunction _on_recv;
   THandlerFunction _on_sent;
 };
-
-

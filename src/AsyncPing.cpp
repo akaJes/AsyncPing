@@ -1,7 +1,8 @@
 #include <Esp.h>
 #include "AsyncPing.h"
+#include "ESP8266WiFi.h"
 
-extern "C"{
+extern "C" {
   #include <lwip/icmp.h>
   #include <lwip/sys.h>
   #include <lwip/inet_chksum.h>
@@ -37,7 +38,7 @@ bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
   ping_timeout = timeout;
   addr_mac = NULL;
   count_down = count;
-  if (!ping_pcb){
+  if (!ping_pcb) {
     ping_pcb = raw_new(IP_PROTO_ICMP);
     raw_recv(ping_pcb, _s_ping_recv, reinterpret_cast<void*>(this));
     raw_bind(ping_pcb, IP_ADDR_ANY);
@@ -48,35 +49,45 @@ bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
   return true;
 }
 
-void AsyncPing::send_packet(){
-  ping_ack=false;
+bool AsyncPing::init(const char *host, u8_t count, u32_t timeout) {
+  IPAddress ip;
+  if (WiFi.hostByName(host, ip))
+    return init(ip, count, timeout);
+  return false;
+}
+
+void AsyncPing::send_packet() {
+  ping_ack = false;
   ping_send(ping_pcb, &ping_target);
   ping_total_sent++;
   count_down--;
   timer_start();
 }
 
-void AsyncPing::cancel(){
-  count_down=0;
+void AsyncPing::cancel() {
+  count_down = 0;
 }
 
-void AsyncPing::timer(){
+void AsyncPing::timer() {
   if(!ping_ack)
     if(_on_recv)
       _on_recv(*this);
   if(count_down){
     send_packet();
   }else{
-    ping_total_time=sys_now()-ping_sent; //micro? system_get_time()
+    ping_total_time = sys_now() - ping_sent; //micro? system_get_time()
     if(_on_sent)
       _on_sent(*this);
+    done();
   }
 }
 
 void AsyncPing::done() {
   timer_stop();
-  if (ping_pcb)
+  if (ping_pcb) {
     raw_remove(ping_pcb);
+    ping_pcb = NULL;
+  }
 }
 
 void AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr) {
@@ -98,7 +109,7 @@ void AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr) {
   pbuf_free(p);
 }
 
-void AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len) {
+void AsyncPing::ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len) {
   size_t i = 0;
   size_t data_len = len - sizeof(struct icmp_echo_hdr);
 
@@ -110,7 +121,7 @@ void AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len) {
   if (ping_seq_num == 0x7fff)
     ping_seq_num = 0;
 
-  iecho->seqno  = htons(ping_seq_num);
+  iecho->seqno = htons(ping_seq_num);
 
   /* fill the additional data buffer with some data */
   for(i = 0; i < data_len; i++) {
@@ -123,7 +134,7 @@ void AsyncPing::ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len) {
 u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   struct icmp_echo_hdr *iecho = NULL;
   struct ip_hdr *ip = (struct ip_hdr *)p->payload;
-
+//  system_soft_wdt_feed();
   if (pbuf_header( p, -PBUF_IP_HLEN) == 0) {
     iecho = (struct icmp_echo_hdr *)p->payload;
     if ((iecho->id == ping_id) && (iecho->seqno == htons(ping_seq_num)) && iecho->type == ICMP_ER) {
