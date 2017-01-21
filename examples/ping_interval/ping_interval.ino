@@ -40,17 +40,22 @@ void setup() {
       }else
         addrs[i] = WiFi.gatewayIP();
 
-      Pings[i].on(true,[](AsyncPing& host){
-        if (host.answer())
-          Serial.printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%d ms\n",host.size(),host.addr().toString().c_str(),host.seq(),host.ttl(),host.time());
+      Pings[i].on(true,[](const AsyncPingResponse& response){
+        IPAddress addr(response.addr); //to prevent with no const toString() in 2.3.0
+        if (response.answer)
+          Serial.printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%d ms\n", response.size, addr.toString().c_str(), response.icmp_seq, response.ttl, response.time);
         else
-          Serial.printf("no answer yet for %s icmp_seq=%d\n",host.addr().toString().c_str(),host.seq());
+          Serial.printf("no answer yet for %s icmp_seq=%d\n", addr.toString().c_str(), response.icmp_seq);
+        return false; //do not stop
       });
-      Pings[i].on(false,[](AsyncPing& host){
-        Serial.printf("total answer from %s sent %d recevied %d time %d ms\n",host.addr().toString().c_str(),host.total_sent(),host.total_recv(),host.total_time());
-        if (host.mac())
-          Serial.printf("detected eth address " MACSTR "\n",MAC2STR(host.mac()->addr));
-       });
+
+      Pings[i].on(false,[](const AsyncPingResponse& response){
+        IPAddress addr(response.addr); //to prevent with no const toString() in 2.3.0
+        Serial.printf("total answer from %s sent %d recevied %d time %d ms\n",addr.toString().c_str(),response.total_sent,response.total_recv,response.total_time);
+        if (response.mac)
+          Serial.printf("detected eth address " MACSTR "\n",MAC2STR(response.mac->addr));
+        return true;
+      });
     }
     ping();
     timer.attach(10,ping);
@@ -58,7 +63,7 @@ void setup() {
 void ping(){
   for (int i = 0; i < 3 ; i++){
     Serial.printf("started ping to %s:\n",addrs[i].toString().c_str());
-    Pings[i].init(addrs[i]);
+    Pings[i].begin(addrs[i]);
   }
 }
 void loop() {

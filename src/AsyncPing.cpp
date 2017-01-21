@@ -15,6 +15,7 @@ AsyncPing::AsyncPing() {
   ping_pcb = NULL;
   _on_recv = NULL;
   _on_sent = NULL;
+  count_down = 0;
 }
 
 AsyncPing::~AsyncPing() {
@@ -28,15 +29,16 @@ void AsyncPing::on(bool mode, THandlerFunction fn) {
     _on_sent=fn;
 }
 
-bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
-  if(!count)
+bool AsyncPing::begin(const IPAddress &addr,u8_t count,u32_t timeout) {
+  if(!count || count_down)
     return false;
-  ping_seq_num = 0;
-  ping_total_sent = 0;
-  ping_total_recv = 0;
-  ping_total_time = 0;
-  ping_timeout = timeout;
-  addr_mac = NULL;
+  _response.icmp_seq = 0;
+  _response.total_sent = 0;
+  _response.total_recv = 0;
+  _response.total_time = 0;
+  _response.addr = addr;
+  _response.timeout = timeout;
+  _response.mac = NULL;
   count_down = count;
   if (!ping_pcb) {
     ping_pcb = raw_new(IP_PROTO_ICMP);
@@ -49,21 +51,21 @@ bool AsyncPing::init(const IPAddress &addr,u8_t count,u32_t timeout) {
   return true;
 }
 
-bool AsyncPing::init(const char *host, u8_t count, u32_t timeout) {
+bool AsyncPing::begin(const char *host, u8_t count, u32_t timeout) {
   IPAddress ip;
   if (WiFi.hostByName(host, ip))
-    return init(ip, count, timeout);
+    return begin(ip, count, timeout);
   return false;
 }
 
 void AsyncPing::send_packet() {
-  ping_ack = false;
+  _response.answer = false;
   ping_send(ping_pcb, &ping_target);
-  ping_total_sent++;
+  _response.total_sent++;
   count_down--;
   os_timer_disarm(&_timer);
   os_timer_setfn(&_timer, reinterpret_cast<os_timer_func_t*>(_s_timer), reinterpret_cast<void*>(this));
-  os_timer_arm(&_timer, ping_timeout, 0);
+  os_timer_arm(&_timer, _response.timeout, 0);
 }
 
 void AsyncPing::cancel() {
@@ -72,15 +74,16 @@ void AsyncPing::cancel() {
 
 void AsyncPing::timer() {
   os_timer_disarm(&_timer);
-  if(!ping_ack)
+  if(!_response.answer)
     if(_on_recv)
-      _on_recv(*this);
+      if(_on_recv(_response))
+        cancel();
   if(count_down){
     send_packet();
   }else{
-    ping_total_time = sys_now() - ping_sent; //micro? system_get_time()
+    _response.total_time = sys_now() - ping_sent; //micro? system_get_time()
     if(_on_sent)
-      _on_sent(*this);
+      _on_sent(_response);
     done();
   }
 }
@@ -95,17 +98,17 @@ void AsyncPing::done() {
 void AsyncPing::ping_send(struct raw_pcb *raw, ip_addr_t *addr) {
   struct pbuf *p = NULL;
   struct icmp_echo_hdr *iecho = NULL;
-  ping_size = sizeof(struct icmp_echo_hdr) + PING_DATA_SIZE;
+  _response.size = sizeof(struct icmp_echo_hdr) + PING_DATA_SIZE;
 
-  p = pbuf_alloc(PBUF_IP, (u16_t)ping_size, PBUF_RAM);
+  p = pbuf_alloc(PBUF_IP, (u16_t)_response.size, PBUF_RAM);
   if (!p) {
     return;
   }
   if ((p->len == p->tot_len) && (p->next == NULL)) {
     iecho = (struct icmp_echo_hdr *)p->payload;
 
-    ping_prepare_echo(iecho, (u16_t)ping_size);
-    err_t err= raw_sendto(raw, p, addr);
+    ping_prepare_echo(iecho, (u16_t)_response.size);
+    raw_sendto(raw, p, addr);
     ping_start = sys_now();
   }
   pbuf_free(p);
@@ -119,11 +122,11 @@ void AsyncPing::ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len) {
   ICMPH_CODE_SET(iecho, 0);
   iecho->chksum = 0;
   iecho->id     = ping_id;
-  ++ ping_seq_num;
-  if (ping_seq_num == 0x7fff)
-    ping_seq_num = 0;
+  ++ _response.icmp_seq;
+  if (_response.icmp_seq == 0x7fff)
+    _response.icmp_seq = 0;
 
-  iecho->seqno = htons(ping_seq_num);
+  iecho->seqno = htons(_response.icmp_seq);
 
   /* fill the additional data buffer with some data */
   for(i = 0; i < data_len; i++) {
@@ -138,14 +141,14 @@ u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   struct ip_hdr *ip = (struct ip_hdr *)p->payload;
   if (pbuf_header( p, -PBUF_IP_HLEN) == 0) {
     iecho = (struct icmp_echo_hdr *)p->payload;
-    if ((iecho->id == ping_id) && (iecho->seqno == htons(ping_seq_num)) && iecho->type == ICMP_ER) {
-      ping_time = sys_now() - ping_start;
-      ping_ttl = ip->_ttl;
-      ping_ack = true;
-      ping_total_recv++;
+    if ((iecho->id == ping_id) && (iecho->seqno == htons(_response.icmp_seq)) && iecho->type == ICMP_ER) {
+      _response.time = sys_now() - ping_start;
+      _response.ttl = ip->_ttl;
+      _response.answer = true;
+      _response.total_recv++;
       ip_addr_t *unused_ipaddr;
-      if (addr_mac == NULL)
-        etharp_find_addr(NULL, addr, &addr_mac, &unused_ipaddr);
+      if (_response.mac == NULL)
+        etharp_find_addr(NULL, addr, &_response.mac, &unused_ipaddr);
       if (_on_recv){
         os_timer_disarm(&_timer_recv);
         os_timer_setfn(&_timer_recv, reinterpret_cast<os_timer_func_t*>(_s_timer_recv), reinterpret_cast<void*>(this));
@@ -167,8 +170,9 @@ void AsyncPing::_s_timer (void*arg){
   return reinterpret_cast<AsyncPing*>(arg)->timer();
 }
 void AsyncPing::_s_timer_recv (void*arg){
-  AsyncPing &host=*reinterpret_cast<AsyncPing*>(arg);
+  AsyncPing &host = *reinterpret_cast<AsyncPing*>(arg);
   os_timer_disarm(&host._timer_recv);
   if (host._on_recv)
-    host._on_recv(host);
+    if(host._on_recv(host._response))
+      host.cancel();
 }
