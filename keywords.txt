@@ -7,26 +7,29 @@
 #######################################
 
 AsyncPing               	KEYWORD1
+AsyncPingResponse       	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
 
 on                      	KEYWORD2
-init                    	KEYWORD2
-
+begin                   	KEYWORD2
 cancel                  	KEYWORD2
+response                	KEYWORD2
+
 answer                  	KEYWORD2
 
 addr                    	KEYWORD2
 time                    	KEYWORD2
-seq                     	KEYWORD2
+icmp_seq                	KEYWORD2
 ttl                     	KEYWORD2
 size                    	KEYWORD2
 
 total_sent              	KEYWORD2
 total_recv              	KEYWORD2
 total_time              	KEYWORD2
+timeout                 	KEYWORD2
 mac                     	KEYWORD2
 
 ######################################

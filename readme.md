@@ -5,13 +5,21 @@ have full ping statistic and hardware MAC address
 usage
 ```
 AsyncPing ping;
-ping.on(true,[](AsyncPing& host){
-  if (host.answer()) {
-    Serial.printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%d ms\n",host.size(),host.addr().toString().c_str(),host.seq(),host.ttl(),host.time());
-    if (host.mac())
-      Serial.printf("detected eth address " MACSTR "\n",MAC2STR(host.mac()->addr));
-   } else
-    Serial.printf("no answer yet for %s icmp_seq=%d\n",host.addr().toString().c_str(),host.seq());
+ping.on(true,[](const AsyncPingResponse& response){
+  IPAddress addr(response.addr); //to prevent with no const toString() in 2.3.0
+  if (response.answer)
+    Serial.printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%d ms\n", response.size, addr.toString().c_str(), response.icmp_seq, response.ttl, response.time);
+  else
+    Serial.printf("no answer yet for %s icmp_seq=%d\n", addr.toString().c_str(), response.icmp_seq);
+  return false; //do not stop
 });
-ping.init(WiFi.gatewayIP());
+ping.on(false,[](const AsyncPingResponse& response){
+  IPAddress addr(response.addr); //to prevent with no const toString() in 2.3.0
+  Serial.printf("total answer from %s sent %d recevied %d time %d ms\n",addr.toString().c_str(),response.total_sent,response.total_recv,response.total_time);
+  if (response.mac)
+    Serial.printf("detected eth address " MACSTR "\n",MAC2STR(response.mac->addr));
+  return true;
+});
+
+ping.begin(WiFi.gatewayIP());
 ```
