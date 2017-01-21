@@ -61,7 +61,9 @@ void AsyncPing::send_packet() {
   ping_send(ping_pcb, &ping_target);
   ping_total_sent++;
   count_down--;
-  timer_start();
+  os_timer_disarm(&_timer);
+  os_timer_setfn(&_timer, reinterpret_cast<os_timer_func_t*>(_s_timer), reinterpret_cast<void*>(this));
+  os_timer_arm(&_timer, ping_timeout, 0);
 }
 
 void AsyncPing::cancel() {
@@ -69,6 +71,7 @@ void AsyncPing::cancel() {
 }
 
 void AsyncPing::timer() {
+  os_timer_disarm(&_timer);
   if(!ping_ack)
     if(_on_recv)
       _on_recv(*this);
@@ -83,7 +86,6 @@ void AsyncPing::timer() {
 }
 
 void AsyncPing::done() {
-  timer_stop();
   if (ping_pcb) {
     raw_remove(ping_pcb);
     ping_pcb = NULL;
@@ -134,20 +136,21 @@ void AsyncPing::ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len) {
 u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   struct icmp_echo_hdr *iecho = NULL;
   struct ip_hdr *ip = (struct ip_hdr *)p->payload;
-//  system_soft_wdt_feed();
   if (pbuf_header( p, -PBUF_IP_HLEN) == 0) {
     iecho = (struct icmp_echo_hdr *)p->payload;
     if ((iecho->id == ping_id) && (iecho->seqno == htons(ping_seq_num)) && iecho->type == ICMP_ER) {
       ping_time = sys_now() - ping_start;
       ping_ttl = ip->_ttl;
-      //ping_size = htons(ip->_len);
       ping_ack = true;
       ping_total_recv++;
       ip_addr_t *unused_ipaddr;
       if (addr_mac == NULL)
         etharp_find_addr(NULL, addr, &addr_mac, &unused_ipaddr);
-      if (_on_recv)
-        _on_recv(*this);
+      if (_on_recv){
+        os_timer_disarm(&_timer_recv);
+        os_timer_setfn(&_timer_recv, reinterpret_cast<os_timer_func_t*>(_s_timer_recv), reinterpret_cast<void*>(this));
+        os_timer_arm(&_timer_recv, 1, 0);
+      }
       pbuf_free(p);
       return 1; /* eat the packet */
     }
@@ -156,24 +159,16 @@ u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   return 0; /* don't eat the packet */
 }
 
-void AsyncPing::timer_start(){
-  timer_stop();
-  os_timer_setfn(&_timer, reinterpret_cast<ETSTimerFunc*>(_s_timer), reinterpret_cast<void*>(this));
-  os_timer_arm(&_timer, ping_timeout, 0); // (repeat)?REPEAT:ONCE); //ONCE=0 REPEAT=1
-  timer_started = true;
-}
-
-void AsyncPing::timer_stop(){
-  if (timer_started){
-    timer_started = false;
-    os_timer_disarm(&_timer);
-  }
-}
-
 u8_t AsyncPing::_s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, ip_addr*addr){
   return reinterpret_cast<AsyncPing*>(arg)->ping_recv(tpcb, pb, addr);
 }
 
 void AsyncPing::_s_timer (void*arg){
   return reinterpret_cast<AsyncPing*>(arg)->timer();
+}
+void AsyncPing::_s_timer_recv (void*arg){
+  AsyncPing &host=*reinterpret_cast<AsyncPing*>(arg);
+  os_timer_disarm(&host._timer_recv);
+  if (host._on_recv)
+    host._on_recv(host);
 }

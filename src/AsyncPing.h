@@ -17,28 +17,28 @@ public:
   void cancel();
   ~AsyncPing();
 
-  bool answer(){ return ping_ack; }
-  IPAddress addr(){ return ping_target.addr; }
-  u32_t time(){ return ping_time; }
-  u32_t seq(){ return ping_seq_num; }
-  u32_t ttl(){ return ping_ttl; }
-  u16_t size(){ return ping_size; }
-  struct eth_addr *mac(){ return addr_mac; }
+  inline bool answer(){ return ping_ack; }
+  inline IPAddress addr(){ return ping_target.addr; }
+  inline u32_t time(){ return ping_time; }
+  inline u32_t seq(){ return ping_seq_num; }
+  inline u32_t ttl(){ return ping_ttl; }
+  inline u16_t size(){ return ping_size; }
+  inline struct eth_addr *mac(){ return addr_mac; }
 
-  u16_t total_sent(){ return ping_total_sent; }
-  u16_t total_recv(){ return ping_total_recv; }
-  u16_t total_time(){ return ping_total_time; }
+  inline u16_t total_sent(){ return ping_total_sent; }
+  inline u16_t total_recv(){ return ping_total_recv; }
+  inline u16_t total_time(){ return ping_total_time; }
 private:
-  ETSTimer _timer;
-  bool  timer_started;
-  void  timer_start();
-  void  timer_stop();
+  os_timer_t _timer;
+  static void _s_timer (void*arg);
   void  timer();
-  struct eth_addr *addr_mac;
+
+  os_timer_t _timer_recv;
+  static void _s_timer_recv (void*arg);
 
   u32_t ping_timeout;
+  struct eth_addr *addr_mac;
   ip_addr_t ping_target;
-  static void ICACHE_FLASH_ATTR _s_timer (void*arg);
 
   u8_t  count_down;
   struct raw_pcb *ping_pcb;
