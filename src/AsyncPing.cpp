@@ -136,7 +136,7 @@ void AsyncPing::ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len) {
   iecho->chksum = inet_chksum(iecho, len);
 }
 
-u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
+u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, C_IP_ADDR ip_addr_t *addr) {
   struct icmp_echo_hdr *iecho = NULL;
   struct ip_hdr *ip = (struct ip_hdr *)p->payload;
   if (pbuf_header( p, -PBUF_IP_HLEN) == 0) {
@@ -146,7 +146,7 @@ u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
       _response.ttl = ip->_ttl;
       _response.answer = true;
       _response.total_recv++;
-      ip_addr_t *unused_ipaddr;
+      C_IP_ADDR ip_addr_t *unused_ipaddr;
       if (_response.mac == NULL)
         etharp_find_addr(NULL, addr, &_response.mac, &unused_ipaddr);
       if (_on_recv){
@@ -162,7 +162,7 @@ u8_t AsyncPing::ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr) {
   return 0; /* don't eat the packet */
 }
 
-u8_t AsyncPing::_s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, ip_addr*addr){
+u8_t AsyncPing::_s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, C_IP_ADDR ip_addr_t *addr){
   return reinterpret_cast<AsyncPing*>(arg)->ping_recv(tpcb, pb, addr);
 }
 

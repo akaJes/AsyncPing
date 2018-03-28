@@ -1,5 +1,6 @@
 #include "IPAddress.h"
 #include <functional>
+#include "core_version.h"
 
 extern "C" {
   #include <lwip/raw.h>
@@ -21,7 +22,11 @@ class AsyncPingResponse{
     u32_t timeout;
     IPAddress addr;
 };
-
+#ifdef ARDUINO_ESP8266_RELEASE_2_3_0
+  #define C_IP_ADDR
+#else
+  #define C_IP_ADDR const
+#endif
 class AsyncPing{
 public:
   typedef std::function< bool (const AsyncPingResponse& ) > THandlerFunction;
@@ -54,8 +59,8 @@ private:
   void  send_packet();
   void  ping_send(struct raw_pcb *raw, ip_addr_t *addr);
   void  ping_prepare_echo( struct icmp_echo_hdr *iecho, u16_t len);
-  u8_t  ping_recv (raw_pcb*pcb, pbuf*p, ip_addr*addr);
-  static u8_t _s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, ip_addr*addr);
+  u8_t  ping_recv (raw_pcb*pcb, pbuf*p, C_IP_ADDR ip_addr_t *addr);
+  static u8_t _s_ping_recv (void*arg, raw_pcb*tpcb, pbuf*pb, C_IP_ADDR ip_addr_t *addr);
   THandlerFunction _on_recv;
   THandlerFunction _on_sent;
 };

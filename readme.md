@@ -3,6 +3,7 @@ This is a fully asynchronous Ping library for Espressif's ESP8266 MCUs.
 have full ping statistic and hardware MAC address
 
 tested on 2.3.0 esp8266/Arduino
+patched for 2.4.x
 
 to install:
 `git clone https://github.com/akaJes/AsyncPing.git ~/Arduino/libraries/AsyncPing`
