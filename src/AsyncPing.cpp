@@ -19,6 +19,8 @@ AsyncPing::AsyncPing() {
 }
 
 AsyncPing::~AsyncPing() {
+  os_timer_disarm(&_timer);
+  os_timer_disarm(&_timer_recv);
   done();
 }
 
