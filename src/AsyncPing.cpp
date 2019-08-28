@@ -16,6 +16,8 @@ AsyncPing::AsyncPing() {
   _on_recv = NULL;
   _on_sent = NULL;
   count_down = 0;
+  memset(&_timer, 0, sizeof(_timer));
+  memset(&_timer_recv, 0, sizeof(_timer_recv));
 }
 
 AsyncPing::~AsyncPing() {
